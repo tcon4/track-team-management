@@ -238,6 +238,25 @@ def get_xc_athlete_profile(athlete_id: int, season_id: int) -> dict:
     }
 
 
+@st.cache_data(ttl=120)
+def get_xc_career_results(athlete_id: int, school_id: int) -> list[dict]:
+    """All XC results for an athlete across every season at this school."""
+    conn = get_connection()
+    try:
+        rows = fetchall(conn,
+            """SELECT s.year, m.name AS meet_name, m.meet_date,
+                      xr.finish_time, xr.place, xr.distance, xr.is_pr
+               FROM xc_result xr
+               JOIN meet m ON m.id = xr.meet_id
+               JOIN season s ON s.id = m.season_id
+               WHERE xr.athlete_id = ? AND s.school_id = ? AND s.sport = 'XC'
+               ORDER BY m.meet_date""",
+            (athlete_id, school_id))
+    finally:
+        release_connection(conn)
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # XC meet participation counts (for dashboard tracker)
 # ---------------------------------------------------------------------------

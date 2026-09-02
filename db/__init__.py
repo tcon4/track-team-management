@@ -56,7 +56,7 @@ from db.import_history import parse_xc_xlsx, import_xc_season
 from db.xc import (
     save_xc_result, clear_xc_results, get_xc_meet_results,
     get_xc_season_bests, get_xc_team_stats, fmt_xc_time,
-    get_xc_athlete_profile, get_xc_meet_counts,
+    get_xc_athlete_profile, get_xc_career_results, get_xc_meet_counts,
     suggest_workout_groups, get_workout_groups,
     save_workout_groups, move_athlete_between_groups,
     is_xc_pr, recalculate_xc_pr_flags,

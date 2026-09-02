@@ -142,6 +142,7 @@ else:
                                 "Event": h["event_name"],
                                 "Seconds": val,
                                 "Result": h["result_value"],
+                                "PR": bool(h["is_pr"]),
                             })
                         except (ValueError, ZeroDivisionError):
                             continue
@@ -193,13 +194,13 @@ else:
 
                                 y_min = ev_df["Seconds"].min()
                                 y_max = ev_df["Seconds"].max()
-                                padding = max((y_max - y_min) * 0.3, 2)
+                                rng = y_max - y_min if y_max > y_min else 1
+                                padding = rng * 0.08
                                 y_scale = alt.Scale(
                                     domain=[y_min - padding, y_max + padding],
-                                    reverse=not is_field,
                                 )
 
-                                ev_df["Time"] = ev_df["Seconds"].apply(_fmt_time)
+                                ev_df["Label"] = ev_df["Seconds"].apply(_fmt_time)
 
                                 span = y_max - y_min
                                 step = 15 if span > 30 else (5 if span > 10 else 2)
@@ -207,41 +208,65 @@ else:
                                 tick_end = math.ceil(y_max / step) * step + step
                                 tick_vals = list(range(int(tick_start), int(tick_end), int(step)))
 
-                                chart = (
-                                    alt.Chart(ev_df)
-                                    .mark_line(point=True, strokeWidth=2)
-                                    .encode(
-                                        x=alt.X(
-                                            "Meet:N",
-                                            sort=alt.SortField("Order"),
-                                            title=None,
-                                            axis=alt.Axis(
-                                                labelAngle=-30,
-                                                labelFontSize=9,
-                                            ),
-                                        ),
-                                        y=alt.Y(
-                                            "Seconds:Q",
-                                            scale=y_scale,
-                                            title=ev_name,
-                                            axis=alt.Axis(
-                                                values=tick_vals,
-                                                labelExpr=(
-                                                    "datum.value >= 60 "
-                                                    "? floor(datum.value / 60) + ':' "
-                                                    "+ (datum.value % 60 < 10 ? '0' : '') "
-                                                    "+ format(datum.value % 60, '.0f') "
-                                                    ": format(datum.value, '.1f')"
-                                                ),
-                                            ),
-                                        ),
-                                        tooltip=[
-                                            alt.Tooltip("Meet:N"),
-                                            alt.Tooltip("Time:N", title="Result"),
-                                        ],
-                                    )
-                                    .properties(height=140)
+                                time_label_expr = (
+                                    "datum.value >= 60 "
+                                    "? floor(datum.value / 60) + ':' "
+                                    "+ (datum.value % 60 < 10 ? '0' : '') "
+                                    "+ format(datum.value % 60, '.0f') "
+                                    ": format(datum.value, '.1f')"
                                 )
+
+                                base = alt.Chart(ev_df).encode(
+                                    x=alt.X(
+                                        "Meet:N",
+                                        sort=alt.SortField("Order"),
+                                        title=None,
+                                        axis=alt.Axis(
+                                            labelAngle=-30,
+                                            labelFontSize=9,
+                                        ),
+                                    ),
+                                )
+
+                                area = base.mark_area(
+                                    opacity=0.1, color="#4A90D9",
+                                ).encode(
+                                    y=alt.Y(
+                                        "Seconds:Q", scale=y_scale, title=ev_name,
+                                        axis=alt.Axis(
+                                            values=tick_vals,
+                                            labelExpr=time_label_expr,
+                                            grid=True, gridDash=[2, 2], gridOpacity=0.3,
+                                        ),
+                                    ),
+                                )
+
+                                line = base.mark_line(
+                                    strokeWidth=2.5, color="#4A90D9",
+                                ).encode(y=alt.Y("Seconds:Q", scale=y_scale))
+
+                                points = base.mark_circle(size=60).encode(
+                                    y=alt.Y("Seconds:Q", scale=y_scale),
+                                    color=alt.condition(
+                                        alt.datum.PR, alt.value("#E8542F"), alt.value("#4A90D9"),
+                                    ),
+                                    tooltip=[
+                                        alt.Tooltip("Meet:N"),
+                                        alt.Tooltip("Label:N", title="Result"),
+                                    ],
+                                )
+
+                                labels = base.mark_text(
+                                    dy=-12, fontSize=10, fontWeight="bold",
+                                ).encode(
+                                    y=alt.Y("Seconds:Q", scale=y_scale),
+                                    text="Label:N",
+                                    color=alt.condition(
+                                        alt.datum.PR, alt.value("#E8542F"), alt.value("#555"),
+                                    ),
+                                )
+
+                                chart = (area + line + points + labels).properties(height=220)
                                 st.altair_chart(chart, use_container_width=True)
 
                                 first = ev_df["Seconds"].iloc[0]
@@ -249,14 +274,14 @@ else:
                                 diff = last - first
                                 if is_field:
                                     if diff > 0:
-                                        st.caption(f"Improved by {_fmt_time(abs(diff))}")
+                                        st.caption(f"↑ Improved by {_fmt_time(abs(diff))}")
                                     elif diff < 0:
-                                        st.caption(f"Down by {_fmt_time(abs(diff))}")
+                                        st.caption(f"↓ Down by {_fmt_time(abs(diff))}")
                                 else:
                                     if diff < 0:
-                                        st.caption(f"Improved by {_fmt_time(abs(diff))}")
+                                        st.caption(f"↓ Improved by {_fmt_time(abs(diff))}")
                                     elif diff > 0:
-                                        st.caption(f"Slower by {_fmt_time(abs(diff))}")
+                                        st.caption(f"↑ Slower by {_fmt_time(abs(diff))}")
 
                 if st.button("Close profile", key=f"close_profile_{aid}"):
                     st.session_state.profile_athlete = None
@@ -283,20 +308,27 @@ else:
                 elif history:
                     import math
 
+                    career = db.get_xc_career_results(
+                        aid, st.session_state.school_id
+                    )
+
                     chart_rows = []
-                    for h in history:
+                    for h in career:
                         try:
                             val = _parse_xc_time(h["finish_time"])
                             chart_rows.append({
-                                "Meet": h["meet_name"],
                                 "Date": h["meet_date"],
+                                "Meet": h["meet_name"],
                                 "Seconds": val,
-                                "Time": h["finish_time"],
+                                "Label": h["finish_time"],
+                                "PR": bool(h["is_pr"]),
+                                "Year": str(h["year"]),
                             })
                         except (ValueError, ZeroDivisionError):
                             continue
 
                     has_chart = len(chart_rows) >= 2
+                    multi_season = len(set(r["Year"] for r in chart_rows)) > 1
 
                     col_left, col_right = st.columns(
                         [1, 1] if has_chart else [1, 0.01]
@@ -318,68 +350,82 @@ else:
 
                     if has_chart:
                         with col_right:
-                            st.markdown("**Season trends**")
+                            title = "Performance history" if multi_season else "Season trends"
+                            st.markdown(f"**{title}**")
                             chart_df = pd.DataFrame(chart_rows)
+                            chart_df = chart_df.sort_values("Date").reset_index(drop=True)
                             chart_df["Order"] = range(len(chart_df))
 
                             y_min = chart_df["Seconds"].min()
                             y_max = chart_df["Seconds"].max()
-                            padding = max((y_max - y_min) * 0.3, 5)
-                            y_scale = alt.Scale(
-                                domain=[y_min - padding, y_max + padding],
-                                reverse=True,
-                            )
 
                             span = y_max - y_min
-                            step = 30 if span > 60 else (15 if span > 30 else 5)
-                            tick_start = math.floor(y_min / step) * step
+                            if span > 120:
+                                step = 60
+                            elif span > 60:
+                                step = 30
+                            elif span > 30:
+                                step = 15
+                            else:
+                                step = 10
+                            tick_start = math.floor(y_min / step) * step - step
                             tick_end = math.ceil(y_max / step) * step + step
                             tick_vals = list(range(
-                                int(tick_start), int(tick_end), int(step)
+                                int(tick_start), int(tick_end) + int(step), int(step)
                             ))
-
-                            chart = (
-                                alt.Chart(chart_df)
-                                .mark_line(point=True, strokeWidth=2)
-                                .encode(
-                                    x=alt.X(
-                                        "Meet:N",
-                                        sort=alt.SortField("Order"),
-                                        title=None,
-                                        axis=alt.Axis(
-                                            labelAngle=-30,
-                                            labelFontSize=9,
-                                        ),
-                                    ),
-                                    y=alt.Y(
-                                        "Seconds:Q",
-                                        scale=y_scale,
-                                        title="Finish time",
-                                        axis=alt.Axis(
-                                            values=tick_vals,
-                                            labelExpr=(
-                                                "floor(datum.value / 60) + ':' "
-                                                "+ (datum.value % 60 < 10 ? '0' : '') "
-                                                "+ format(datum.value % 60, '.0f')"
-                                            ),
-                                        ),
-                                    ),
-                                    tooltip=[
-                                        alt.Tooltip("Meet:N"),
-                                        alt.Tooltip("Time:N", title="Result"),
-                                    ],
-                                )
-                                .properties(height=140)
+                            y_scale = alt.Scale(
+                                domain=[tick_start, tick_end],
                             )
+
+                            time_label_expr = (
+                                "floor(datum.value / 60) + ':' "
+                                "+ (datum.value % 60 < 10 ? '0' : '') "
+                                "+ format(datum.value % 60, '.0f')"
+                            )
+
+                            line = alt.Chart(chart_df).mark_line(
+                                strokeWidth=2.5, color="#1B2A4A",
+                            ).encode(
+                                x=alt.X(
+                                    "Date:N", title=None,
+                                    sort=alt.SortField("Order"),
+                                    axis=alt.Axis(
+                                        labelAngle=-45, labelFontSize=9,
+                                        grid=True, gridColor="black", gridOpacity=0.4,
+                                    ),
+                                ),
+                                y=alt.Y(
+                                    "Seconds:Q", scale=y_scale, title="Finish time",
+                                    axis=alt.Axis(
+                                        values=tick_vals,
+                                        labelExpr=time_label_expr,
+                                        grid=True, gridDash=[2, 2], gridOpacity=0.3,
+                                    ),
+                                ),
+                            )
+
+                            points = alt.Chart(chart_df).mark_circle(
+                                size=50, color="#1B2A4A",
+                            ).encode(
+                                x=alt.X("Date:N", sort=alt.SortField("Order")),
+                                y=alt.Y("Seconds:Q", scale=y_scale),
+                                tooltip=[
+                                    alt.Tooltip("Date:N", title="Date"),
+                                    alt.Tooltip("Meet:N"),
+                                    alt.Tooltip("Label:N", title="Time"),
+                                ],
+                            )
+
+                            chart = (line + points).properties(height=250)
                             st.altair_chart(chart, use_container_width=True)
 
                             first = chart_df["Seconds"].iloc[0]
                             last = chart_df["Seconds"].iloc[-1]
                             diff = last - first
                             if diff < 0:
-                                st.caption(f"Improved by {fmt_xc_time(abs(diff))}")
+                                st.caption(f"↓ Improved by {fmt_xc_time(abs(diff))}")
                             elif diff > 0:
-                                st.caption(f"Slower by {fmt_xc_time(abs(diff))}")
+                                st.caption(f"↑ Slower by {fmt_xc_time(abs(diff))}")
 
                 if st.button("Close profile", key=f"close_xc_profile_{aid}"):
                     st.session_state.profile_athlete = None
