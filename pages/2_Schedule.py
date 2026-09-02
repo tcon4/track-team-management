@@ -204,7 +204,7 @@ else:
                     )
                     st.session_state.editing_meet = None
                     st.success("Meet updated.")
-                    st.rerun()
+                    shared.data_changed()
                 if cancel_m:
                     st.session_state.editing_meet = None
                     st.rerun()
@@ -212,7 +212,7 @@ else:
                     db.delete_meet(meet["id"])
                     st.session_state.editing_meet = None
                     st.success("Meet deleted.")
-                    st.rerun()
+                    shared.data_changed()
 
 st.divider()
 
@@ -244,4 +244,4 @@ with st.expander("+ Add meet"):
             db.add_meet(season_id, meet_name,
                         meet_date_input.isoformat(), meet_loc, host_id_add)
             st.success(f"Added: {meet_name}")
-            st.rerun()
+            shared.data_changed()

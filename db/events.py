@@ -2,9 +2,11 @@
 
 import re
 
+import streamlit as st
 from db.connection import get_connection, release_connection, fetchall, execute
 
 
+@st.cache_data(ttl=120)
 def get_track_events(gender: str | None = None) -> list[dict]:
     conn = get_connection()
     try:

@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS athlete (
     gender     TEXT NOT NULL CHECK (gender IN ('M', 'F')),
     school_id  INTEGER NOT NULL REFERENCES school(id),
     status     TEXT NOT NULL DEFAULT 'active'
-                   CHECK (status IN ('active', 'injured', 'inactive'))
+                   CHECK (status IN ('active', 'injured', 'inactive', 'alumni'))
 );
 
 CREATE TABLE IF NOT EXISTS season (
@@ -270,6 +270,31 @@ CREATE TABLE IF NOT EXISTS result (
     is_pr          INTEGER NOT NULL DEFAULT 0,
     team_points    INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS xc_result (
+    id           SERIAL PRIMARY KEY,
+    meet_id      INTEGER NOT NULL REFERENCES meet(id),
+    athlete_id   INTEGER NOT NULL REFERENCES athlete(id),
+    finish_time  TEXT NOT NULL,
+    place        INTEGER,
+    distance     TEXT NOT NULL DEFAULT '2mi',
+    is_pr        INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (meet_id, athlete_id)
+);
+
+CREATE TABLE IF NOT EXISTS workout_group (
+    id         SERIAL PRIMARY KEY,
+    season_id  INTEGER NOT NULL REFERENCES season(id),
+    name       TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS workout_group_member (
+    id         SERIAL PRIMARY KEY,
+    group_id   INTEGER NOT NULL REFERENCES workout_group(id) ON DELETE CASCADE,
+    athlete_id INTEGER NOT NULL REFERENCES athlete(id),
+    UNIQUE (group_id, athlete_id)
+);
 """
 
 _SQLITE_SCHEMA = """
@@ -287,7 +312,7 @@ CREATE TABLE IF NOT EXISTS athlete (
     gender     TEXT NOT NULL CHECK (gender IN ('M', 'F')),
     school_id  INTEGER NOT NULL REFERENCES school(id),
     status     TEXT NOT NULL DEFAULT 'active'
-                   CHECK (status IN ('active', 'injured', 'inactive'))
+                   CHECK (status IN ('active', 'injured', 'inactive', 'alumni'))
 );
 
 CREATE TABLE IF NOT EXISTS season (
@@ -377,6 +402,31 @@ CREATE TABLE IF NOT EXISTS result (
     finish_time    TEXT NOT NULL,
     is_pr          INTEGER NOT NULL DEFAULT 0,
     team_points    INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS xc_result (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    meet_id      INTEGER NOT NULL REFERENCES meet(id),
+    athlete_id   INTEGER NOT NULL REFERENCES athlete(id),
+    finish_time  TEXT NOT NULL,
+    place        INTEGER,
+    distance     TEXT NOT NULL DEFAULT '2mi',
+    is_pr        INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (meet_id, athlete_id)
+);
+
+CREATE TABLE IF NOT EXISTS workout_group (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_id  INTEGER NOT NULL REFERENCES season(id),
+    name       TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS workout_group_member (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id   INTEGER NOT NULL REFERENCES workout_group(id) ON DELETE CASCADE,
+    athlete_id INTEGER NOT NULL REFERENCES athlete(id),
+    UNIQUE (group_id, athlete_id)
 );
 """
 
@@ -573,6 +623,46 @@ def migrate_recalculate_prs() -> None:
     recalculate_pr_flags()
 
 
+def migrate_alumni_status() -> None:
+    """Add 'alumni' to the athlete status CHECK constraint."""
+    conn = get_connection()
+    try:
+        if _is_postgres():
+            row = fetchone(conn,
+                """SELECT 1 FROM information_schema.check_constraints
+                   WHERE constraint_name = 'athlete_status_check'
+                     AND check_clause LIKE ?""", ('%alumni%',))
+            if not row:
+                execute(conn, "ALTER TABLE athlete DROP CONSTRAINT IF EXISTS athlete_status_check")
+                execute(conn,
+                    """ALTER TABLE athlete ADD CONSTRAINT athlete_status_check
+                       CHECK (status IN ('active', 'injured', 'inactive', 'alumni'))""")
+            return
+
+        row = fetchone(conn,
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='athlete'")
+        if not row or "alumni" in row["sql"]:
+            return
+
+        conn.execute("PRAGMA foreign_keys = OFF")
+        execute(conn, """CREATE TABLE athlete_new (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT NOT NULL,
+            last_name  TEXT NOT NULL,
+            grade      INTEGER NOT NULL CHECK (grade IN (6, 7, 8)),
+            gender     TEXT NOT NULL CHECK (gender IN ('M', 'F')),
+            school_id  INTEGER NOT NULL REFERENCES school(id),
+            status     TEXT NOT NULL DEFAULT 'active'
+                           CHECK (status IN ('active', 'injured', 'inactive', 'alumni'))
+        )""")
+        execute(conn, "INSERT INTO athlete_new SELECT * FROM athlete")
+        execute(conn, "DROP TABLE athlete")
+        execute(conn, "ALTER TABLE athlete_new RENAME TO athlete")
+        conn.execute("PRAGMA foreign_keys = ON")
+    finally:
+        release_connection(conn)
+
+
 _db_initialized = False
 
 def init_db() -> None:
@@ -587,6 +677,7 @@ def init_db() -> None:
     migrate_meet_columns()
     migrate_long_event_times()
     migrate_recalculate_prs()
+    migrate_alumni_status()
     conn = get_connection()
     try:
         row = fetchone(conn, "SELECT COUNT(*) AS cnt FROM school")

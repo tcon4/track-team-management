@@ -170,7 +170,7 @@ if not read_only:
         ]
         db.save_lineup(selected_meet_id, entries)
         st.success("Lineup saved.")
-        st.rerun()
+        shared.data_changed()
 
     if col_clear.button("Clear lineup"):
         st.session_state[lineup_key] = set()

@@ -18,6 +18,7 @@ from db.athlete import (
     add_to_roster, remove_from_roster, get_roster_stats,
     parse_roster_csv, import_roster_from_rows, generate_csv_template,
     parse_tryout_spreadsheet, import_tryout_data,
+    graduate_athletes,
 )
 
 # Meets
@@ -46,4 +47,17 @@ from db.results import (
 from db.lineup import (
     get_lineup, save_lineup, get_athlete_event_counts,
     auto_suggest_lineup, generate_lineup_pdf, generate_checklist_pdf,
+)
+
+# XC history import
+from db.import_history import parse_xc_xlsx, import_xc_season
+
+# XC
+from db.xc import (
+    save_xc_result, clear_xc_results, get_xc_meet_results,
+    get_xc_season_bests, get_xc_team_stats, fmt_xc_time,
+    get_xc_athlete_profile, get_xc_meet_counts,
+    suggest_workout_groups, get_workout_groups,
+    save_workout_groups, move_athlete_between_groups,
+    is_xc_pr, recalculate_xc_pr_flags,
 )

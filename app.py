@@ -38,7 +38,9 @@ if sport == "Track":
     pr_count = sum(1 for b in bests if b.get("is_pr"))
     c4.metric("Season PRs", pr_count)
 else:
-    c4.metric("Total Roster", stats["total"])
+    xc_bests = db.get_xc_season_bests(season_id)
+    xc_pr_count = sum(1 for b in xc_bests if b.get("is_pr"))
+    c4.metric("Season PRs", xc_pr_count)
 
 st.divider()
 
@@ -86,7 +88,6 @@ if sport == "Track" and bests:
     if prs:
         st.divider()
         st.markdown("**Recent PRs**")
-        # Show up to 5 PRs
         for b in prs[:5]:
             st.caption(
                 f"🏅 {b['first_name']} {b['last_name']} — "
@@ -96,59 +97,81 @@ if sport == "Track" and bests:
             st.page_link("pages/5_Season_Bests.py",
                          label=f"View all {len(prs)} PRs →")
 
-# --- Participation tracker ---
-if sport == "Track":
-    roster = db.get_roster(season_id)
-    active_roster = [a for a in roster if a["status"] == "active"]
-    meet_counts = db.get_athlete_meet_counts(season_id)
-    total_real_meets = len(past_meets)
-
-    # Athletes with 0 or 1 meets
-    low_participation = [
-        (a, meet_counts.get(a["id"], 0))
-        for a in active_roster
-        if meet_counts.get(a["id"], 0) <= 1
-    ]
-
-    if low_participation and total_real_meets >= 1:
+elif sport == "XC" and xc_bests:
+    prs = [b for b in xc_bests if b.get("is_pr")]
+    if prs:
         st.divider()
-        with st.expander(
-            f"**Participation watch** — {len(low_participation)} athletes "
-            f"with 0-1 meets",
-            expanded=False,
-        ):
-            zero_meets = [(a, c) for a, c in low_participation if c == 0]
-            one_meet = [(a, c) for a, c in low_participation if c == 1]
+        st.markdown("**Recent PRs**")
+        for b in prs[:5]:
+            st.caption(
+                f"🏅 {b['first_name']} {b['last_name']} — "
+                f"**{b['season_best']}**"
+            )
+        if len(prs) > 5:
+            st.page_link("pages/5_Season_Bests.py",
+                         label=f"View all {len(prs)} PRs →")
 
-            if zero_meets:
-                st.markdown("**No meets yet:**")
-                for a, _ in sorted(
-                    zero_meets,
-                    key=lambda x: (x[0]["last_name"], x[0]["first_name"]),
-                ):
-                    gender_label = "B" if a["gender"] == "M" else "G"
-                    st.caption(
-                        f"{a['last_name']}, {a['first_name']} "
-                        f"({gender_label}, Gr. {a['grade']})"
-                    )
+# --- Participation tracker ---
+roster = db.get_roster(season_id)
+active_roster = [a for a in roster if a["status"] == "active"]
+if sport == "Track":
+    meet_counts = db.get_athlete_meet_counts(season_id)
+else:
+    meet_counts = db.get_xc_meet_counts(season_id)
+total_real_meets = len(past_meets)
 
-            if one_meet:
-                st.markdown("**1 meet only:**")
-                for a, _ in sorted(
-                    one_meet,
-                    key=lambda x: (x[0]["last_name"], x[0]["first_name"]),
-                ):
-                    gender_label = "B" if a["gender"] == "M" else "G"
-                    st.caption(
-                        f"{a['last_name']}, {a['first_name']} "
-                        f"({gender_label}, Gr. {a['grade']})"
-                    )
+low_participation = [
+    (a, meet_counts.get(a["id"], 0))
+    for a in active_roster
+    if meet_counts.get(a["id"], 0) <= 1
+]
+
+if low_participation and total_real_meets >= 1:
+    st.divider()
+    with st.expander(
+        f"**Participation watch** — {len(low_participation)} athletes "
+        f"with 0-1 meets",
+        expanded=False,
+    ):
+        zero_meets = [(a, c) for a, c in low_participation if c == 0]
+        one_meet = [(a, c) for a, c in low_participation if c == 1]
+
+        if zero_meets:
+            st.markdown("**No meets yet:**")
+            for a, _ in sorted(
+                zero_meets,
+                key=lambda x: (x[0]["last_name"], x[0]["first_name"]),
+            ):
+                gender_label = "B" if a["gender"] == "M" else "G"
+                st.caption(
+                    f"{a['last_name']}, {a['first_name']} "
+                    f"({gender_label}, Gr. {a['grade']})"
+                )
+
+        if one_meet:
+            st.markdown("**1 meet only:**")
+            for a, _ in sorted(
+                one_meet,
+                key=lambda x: (x[0]["last_name"], x[0]["first_name"]),
+            ):
+                gender_label = "B" if a["gender"] == "M" else "G"
+                st.caption(
+                    f"{a['last_name']}, {a['first_name']} "
+                    f"({gender_label}, Gr. {a['grade']})"
+                )
 
 # --- Quick links ---
 st.divider()
 st.markdown("**Quick Links**")
-lc1, lc2, lc3, lc4 = st.columns(4)
-lc1.page_link("pages/1_Roster.py", label="📋 Roster")
-lc2.page_link("pages/2_Schedule.py", label="📅 Schedule")
-lc3.page_link("pages/3_Lineup.py", label="✏️ Lineup Builder")
-lc4.page_link("pages/4_Results.py", label="🏁 Results")
+if sport == "XC":
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    lc1.page_link("pages/1_Roster.py", label="📋 Roster")
+    lc2.page_link("pages/2_Schedule.py", label="📅 Schedule")
+    lc3.page_link("pages/4_Results.py", label="🏁 Results")
+    lc4.page_link("pages/6_Workout_Groups.py", label="🏃 Workout Groups")
+else:
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    lc1.page_link("pages/1_Roster.py", label="📋 Roster")
+    lc2.page_link("pages/2_Schedule.py", label="📅 Schedule")
+    lc3.page_link("pages/3_Lineup.py", label="✏️ Lineup Builder")
+    lc4.page_link("pages/4_Results.py", label="🏁 Results")

@@ -8,6 +8,10 @@ from datetime import date
 import db
 
 
+def _season_label(s: dict) -> str:
+    return f"{s['year']} {s['sport']}"
+
+
 def setup() -> int:
     """
     Bootstrap the app: init DB, render sidebar, resolve season.
@@ -21,13 +25,6 @@ def setup() -> int:
 
     db.init_db()
 
-    # Session state defaults
-    if "sport" not in st.session_state:
-        st.session_state.sport = "Track"
-
-    if "current_year" not in st.session_state:
-        st.session_state.current_year = date.today().year
-
     for key in ("editing_athlete", "editing_meet", "profile_athlete",
                 "ms_matched", "csv_preview_rows"):
         if key not in st.session_state:
@@ -40,9 +37,6 @@ def setup() -> int:
         st.session_state.school_id = schools[0]["id"] if schools else None
 
     with st.sidebar:
-        _sport_label = st.session_state.get("sport", "Athletics")
-        st.title(f"🏃 {_sport_label} Manager")
-
         if not schools:
             st.error("No schools found in database. Check your database connection.")
             st.stop()
@@ -51,14 +45,55 @@ def setup() -> int:
         school = next(s for s in schools if s["name"] == selected_school_name)
         st.session_state.school_id = school["id"]
 
-        sport = st.radio("Sport", ["Track", "XC"], horizontal=True)
-        st.session_state.sport = sport
+        # Season selector — single dropdown
+        seasons = db.get_seasons(school["id"])
 
-        year = st.selectbox(
-            "Season",
-            options=list(range(date.today().year, date.today().year - 5, -1)),
+        if not seasons:
+            now = date.today()
+            sport = "XC" if now.month >= 7 else "Track"
+            sid = db.get_or_create_season(now.year, sport, school["id"])
+            seasons = db.get_seasons(school["id"])
+
+        season_labels = [_season_label(s) for s in seasons]
+        default_idx = 0
+        if "selected_season_id" in st.session_state:
+            for i, s in enumerate(seasons):
+                if s["id"] == st.session_state.selected_season_id:
+                    default_idx = i
+                    break
+
+        selected_label = st.selectbox(
+            "Season", season_labels, index=default_idx,
         )
-        st.session_state.current_year = year
+        selected_season = seasons[season_labels.index(selected_label)]
+        st.session_state.selected_season_id = selected_season["id"]
+        st.session_state.sport = selected_season["sport"]
+        st.session_state.current_year = selected_season["year"]
+
+        sport_label = selected_season["sport"]
+        st.sidebar.markdown(
+            f"### 🏃 {sport_label} Manager"
+        )
+
+        with st.expander("New season"):
+            with st.form("new_season_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    new_sport = st.selectbox(
+                        "Sport", ["XC", "Track"], key="new_season_sport",
+                    )
+                with col2:
+                    new_year = st.number_input(
+                        "Year", value=date.today().year,
+                        min_value=2020, max_value=2030,
+                        key="new_season_year",
+                    )
+                if st.form_submit_button("Create"):
+                    new_sid = db.get_or_create_season(
+                        int(new_year), new_sport, school["id"],
+                    )
+                    st.session_state.selected_season_id = new_sid
+                    data_changed()
 
         st.divider()
 
@@ -68,22 +103,21 @@ def setup() -> int:
                 new_city = st.text_input("City", value=school["city"])
                 if st.form_submit_button("Save"):
                     db.update_school(school["id"], new_name, new_city)
-                    st.rerun()
+                    data_changed()
 
-    # Resolve season
-    season_id = db.get_or_create_season(
-        year=st.session_state.current_year,
-        sport=st.session_state.sport,
-        school_id=st.session_state.school_id,
-    )
+    return selected_season["id"]
 
-    return season_id
+
+def data_changed():
+    """Clear all data caches and rerun. Call after any database write."""
+    st.cache_data.clear()
+    st.rerun()
 
 
 def format_place(place: int | None) -> str:
     """Format a place number as '1st', '2nd', '3rd', '4th', etc."""
     if place is None:
-        return "\u2014"
+        return "—"
     if place == 1:
         return "1st"
     if place == 2:

@@ -1,8 +1,10 @@
 """db/meet.py — Meet CRUD and meet reports."""
 
+import streamlit as st
 from db.connection import get_connection, release_connection, fetchall, fetchone, execute, insert_returning_id
 
 
+@st.cache_data(ttl=120)
 def get_meets(season_id: int) -> list[dict]:
     """All meets for a season, ordered by date."""
     conn = get_connection()
@@ -18,6 +20,7 @@ def get_meets(season_id: int) -> list[dict]:
         release_connection(conn)
 
 
+@st.cache_data(ttl=120)
 def get_meet(meet_id: int) -> dict | None:
     conn = get_connection()
     try:

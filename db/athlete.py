@@ -4,6 +4,7 @@ import csv
 import io
 import re
 
+import streamlit as st
 from db.connection import get_connection, release_connection, fetchall, fetchone, execute, insert_returning_id
 
 
@@ -11,6 +12,7 @@ from db.connection import get_connection, release_connection, fetchall, fetchone
 # CRUD
 # ---------------------------------------------------------------------------
 
+@st.cache_data(ttl=120)
 def get_athletes(school_id: int) -> list[dict]:
     conn = get_connection()
     try:
@@ -23,6 +25,7 @@ def get_athletes(school_id: int) -> list[dict]:
         release_connection(conn)
 
 
+@st.cache_data(ttl=120)
 def get_roster(season_id: int) -> list[dict]:
     conn = get_connection()
     try:
@@ -91,7 +94,27 @@ def get_roster_stats(season_id: int) -> dict:
         "active":   sum(1 for a in roster if a["status"] == "active"),
         "injured":  sum(1 for a in roster if a["status"] == "injured"),
         "inactive": sum(1 for a in roster if a["status"] == "inactive"),
+        "alumni":   sum(1 for a in roster if a["status"] == "alumni"),
     }
+
+
+def graduate_athletes(season_id: int) -> int:
+    """Mark 8th-grade athletes on this season's roster as alumni.
+
+    Only affects athletes currently status='active'. Returns count updated.
+    """
+    conn = get_connection()
+    try:
+        cur = execute(conn,
+            """UPDATE athlete SET status='alumni'
+               WHERE id IN (
+                   SELECT athlete_id FROM season_roster WHERE season_id=?
+               )
+               AND grade = 8 AND status = 'active'""",
+            (season_id,))
+        return cur.rowcount
+    finally:
+        release_connection(conn)
 
 
 # ---------------------------------------------------------------------------

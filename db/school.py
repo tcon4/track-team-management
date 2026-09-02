@@ -1,8 +1,10 @@
 """db/school.py — School CRUD."""
 
+import streamlit as st
 from db.connection import get_connection, release_connection, fetchall, fetchone, execute
 
 
+@st.cache_data(ttl=120)
 def get_schools() -> list[dict]:
     conn = get_connection()
     try:
@@ -11,6 +13,7 @@ def get_schools() -> list[dict]:
         release_connection(conn)
 
 
+@st.cache_data(ttl=120)
 def get_school(school_id: int) -> dict | None:
     conn = get_connection()
     try:

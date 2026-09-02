@@ -1,5 +1,6 @@
 """db/results.py — Track results, PR detection, and season bests."""
 
+import streamlit as st
 from db.connection import get_connection, release_connection, fetchall, fetchone, execute
 
 
@@ -72,6 +73,7 @@ def save_track_result(meet_id: int, athlete_id: int, event_id: int,
         release_connection(conn)
 
 
+@st.cache_data(ttl=120)
 def get_meet_results(meet_id: int) -> list[dict]:
     conn = get_connection()
     try:
@@ -88,6 +90,7 @@ def get_meet_results(meet_id: int) -> list[dict]:
         release_connection(conn)
 
 
+@st.cache_data(ttl=120)
 def get_season_bests_track(season_id: int) -> list[dict]:
     """Season bests using numeric comparison instead of string MIN()."""
     conn = get_connection()
@@ -284,6 +287,7 @@ def get_season_bests(season_id: int) -> dict[int, str]:
     return {row["athlete_id"]: row["best_time"] for row in rows}
 
 
+@st.cache_data(ttl=120)
 def get_athlete_meet_counts(season_id: int) -> dict[int, int]:
     """Returns {athlete_id: number_of_meets_participated} for the season.
 
@@ -312,6 +316,7 @@ def get_athlete_meet_counts(season_id: int) -> dict[int, int]:
     return {r["athlete_id"]: r["meet_count"] for r in rows}
 
 
+@st.cache_data(ttl=120)
 def get_athlete_profile(athlete_id: int, season_id: int) -> dict:
     """Returns full season history for an athlete."""
     conn = get_connection()

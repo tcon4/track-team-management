@@ -32,19 +32,38 @@ gender_map = {"All": None, "Boys (M)": "M", "Girls (F)": "F"}
 selected_gender = gender_map[gender_filter]
 
 roster = db.get_roster(season_id)
-season_bests = db.get_season_bests(season_id) if sport == "XC" else {}
-all_event_assignments = db.get_all_athlete_events(season_id) if sport == "Track" else {}
+if sport == "XC":
+    xc_bests_list = db.get_xc_season_bests(season_id)
+    season_bests = {b["athlete_id"]: b["season_best"] for b in xc_bests_list}
+    all_event_assignments = {}
+else:
+    season_bests = {}
+    all_event_assignments = db.get_all_athlete_events(season_id)
 
 if selected_gender:
     roster = [a for a in roster if a["gender"] == selected_gender]
 
 # Stats
 stats = db.get_roster_stats(season_id)
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total", stats["total"])
-c2.metric("Active", stats["active"])
-c3.metric("Injured", stats["injured"])
-c4.metric("Inactive", stats["inactive"])
+cols = st.columns(5 if stats.get("alumni") else 4)
+cols[0].metric("Total", stats["total"])
+cols[1].metric("Active", stats["active"])
+cols[2].metric("Injured", stats["injured"])
+cols[3].metric("Inactive", stats["inactive"])
+if stats.get("alumni"):
+    cols[4].metric("Alumni", stats["alumni"])
+
+from datetime import date
+if year < date.today().year:
+    eighth_graders = [a for a in roster if a["grade"] == 8 and a["status"] == "active"]
+    if eighth_graders:
+        if st.button(
+            f"Graduate {len(eighth_graders)} 8th graders to alumni",
+            help="Marks active 8th graders on this roster as alumni",
+        ):
+            count = db.graduate_athletes(season_id)
+            st.success(f"Graduated {count} athletes to alumni status.")
+            shared.data_changed()
 
 st.divider()
 
@@ -61,7 +80,7 @@ else:
         gender_label = "Boys" if athlete["gender"] == "M" else "Girls"
         status = athlete["status"]
         status_icon = {"active": "\U0001f7e2", "injured": "\U0001f7e1",
-                       "inactive": "\u26ab"}.get(status, "\u26aa")
+                       "inactive": "\u26ab", "alumni": "\U0001f393"}.get(status, "\u26aa")
 
         if sport == "Track":
             events = all_event_assignments.get(aid, [])
@@ -243,6 +262,129 @@ else:
                     st.session_state.profile_athlete = None
                     st.rerun()
 
+        # ---- XC athlete profile panel ----
+        elif is_profile_open and sport == "XC":
+            from db.xc import _parse_xc_time, fmt_xc_time
+            with st.container(border=True):
+                profile = db.get_xc_athlete_profile(aid, season_id)
+                history = profile["history"]
+
+                st.caption(
+                    f"{athlete['first_name']} {athlete['last_name']} · "
+                    f"Gr. {athlete['grade']} · {gender_label} · "
+                    f"{status_icon} {status.capitalize()}"
+                )
+
+                if profile["season_best"]:
+                    st.write(f"Season best: **{profile['season_best']}**")
+
+                if not history:
+                    st.caption("No XC results recorded yet this season.")
+                elif history:
+                    import math
+
+                    chart_rows = []
+                    for h in history:
+                        try:
+                            val = _parse_xc_time(h["finish_time"])
+                            chart_rows.append({
+                                "Meet": h["meet_name"],
+                                "Date": h["meet_date"],
+                                "Seconds": val,
+                                "Time": h["finish_time"],
+                            })
+                        except (ValueError, ZeroDivisionError):
+                            continue
+
+                    has_chart = len(chart_rows) >= 2
+
+                    col_left, col_right = st.columns(
+                        [1, 1] if has_chart else [1, 0.01]
+                    )
+
+                    with col_left:
+                        st.markdown("**Meet history**")
+                        for h in history:
+                            pr_flag = " ✓ PR" if h["is_pr"] else ""
+                            place_str = (
+                                f" · {shared.format_place(h['place'])}"
+                                if h["place"] else ""
+                            )
+                            st.caption(
+                                f"{h['meet_date']} — {h['meet_name']} · "
+                                f"{h['distance']} · "
+                                f"{h['finish_time']}{place_str}{pr_flag}"
+                            )
+
+                    if has_chart:
+                        with col_right:
+                            st.markdown("**Season trends**")
+                            chart_df = pd.DataFrame(chart_rows)
+                            chart_df["Order"] = range(len(chart_df))
+
+                            y_min = chart_df["Seconds"].min()
+                            y_max = chart_df["Seconds"].max()
+                            padding = max((y_max - y_min) * 0.3, 5)
+                            y_scale = alt.Scale(
+                                domain=[y_min - padding, y_max + padding],
+                                reverse=True,
+                            )
+
+                            span = y_max - y_min
+                            step = 30 if span > 60 else (15 if span > 30 else 5)
+                            tick_start = math.floor(y_min / step) * step
+                            tick_end = math.ceil(y_max / step) * step + step
+                            tick_vals = list(range(
+                                int(tick_start), int(tick_end), int(step)
+                            ))
+
+                            chart = (
+                                alt.Chart(chart_df)
+                                .mark_line(point=True, strokeWidth=2)
+                                .encode(
+                                    x=alt.X(
+                                        "Meet:N",
+                                        sort=alt.SortField("Order"),
+                                        title=None,
+                                        axis=alt.Axis(
+                                            labelAngle=-30,
+                                            labelFontSize=9,
+                                        ),
+                                    ),
+                                    y=alt.Y(
+                                        "Seconds:Q",
+                                        scale=y_scale,
+                                        title="Finish time",
+                                        axis=alt.Axis(
+                                            values=tick_vals,
+                                            labelExpr=(
+                                                "floor(datum.value / 60) + ':' "
+                                                "+ (datum.value % 60 < 10 ? '0' : '') "
+                                                "+ format(datum.value % 60, '.0f')"
+                                            ),
+                                        ),
+                                    ),
+                                    tooltip=[
+                                        alt.Tooltip("Meet:N"),
+                                        alt.Tooltip("Time:N", title="Result"),
+                                    ],
+                                )
+                                .properties(height=140)
+                            )
+                            st.altair_chart(chart, use_container_width=True)
+
+                            first = chart_df["Seconds"].iloc[0]
+                            last = chart_df["Seconds"].iloc[-1]
+                            diff = last - first
+                            if diff < 0:
+                                st.caption(f"Improved by {fmt_xc_time(abs(diff))}")
+                            elif diff > 0:
+                                st.caption(f"Slower by {fmt_xc_time(abs(diff))}")
+
+                if st.button("Close profile", key=f"close_xc_profile_{aid}"):
+                    st.session_state.profile_athlete = None
+                    st.rerun()
+
         # ---- Inline edit panel ----
         if is_editing:
             with st.container(border=True):
@@ -257,9 +399,10 @@ else:
                                              index=[6, 7, 8].index(athlete["grade"]))
                     new_gender = ec4.selectbox("Gender", ["M", "F"],
                                               index=["M", "F"].index(athlete["gender"]))
+                    _statuses = ["active", "injured", "inactive", "alumni"]
                     new_status = ec5.selectbox(
-                        "Status", ["active", "injured", "inactive"],
-                        index=["active", "injured", "inactive"].index(athlete["status"])
+                        "Status", _statuses,
+                        index=_statuses.index(athlete["status"])
                     )
                     s_col, c_col, r_col = st.columns(3)
                     save = s_col.form_submit_button("Save changes", type="primary")
@@ -271,7 +414,7 @@ else:
                                       new_grade, new_gender, new_status)
                     st.session_state.editing_athlete = None
                     st.success(f"Saved {new_first} {new_last}.")
-                    st.rerun()
+                    shared.data_changed()
                 if cancel:
                     st.session_state.editing_athlete = None
                     st.rerun()
@@ -279,7 +422,7 @@ else:
                     db.remove_from_roster(season_id, aid)
                     st.session_state.editing_athlete = None
                     st.success("Removed from roster.")
-                    st.rerun()
+                    shared.data_changed()
 
                 # Event assignment (Track only)
                 if sport == "Track":
@@ -318,7 +461,7 @@ else:
                                  key=f"save_ev_{aid}"):
                         db.set_athlete_events(aid, season_id, selected_ids)
                         st.success("Event assignments saved.")
-                        st.rerun()
+                        shared.data_changed()
 
 st.divider()
 
@@ -345,7 +488,7 @@ with st.expander("+ Add a single athlete"):
                                  st.session_state.school_id)
             db.add_to_roster(season_id, aid)
             st.success(f"Added {first} {last}.")
-            st.rerun()
+            shared.data_changed()
 
 # ---------------------------------------------------------------------------
 # CSV import
@@ -401,7 +544,7 @@ with st.expander("\u2b06 Import from CSV file"):
                 f"Imported: {result['added']} added, "
                 f"{result['skipped']} already existed."
             )
-            st.rerun()
+            shared.data_changed()
 
 # ---------------------------------------------------------------------------
 # Tryout spreadsheet import
@@ -456,4 +599,4 @@ with st.expander("\u2b06 Import from tryout spreadsheet (.xlsx)"):
                 f"{result['results']} tryout results \u00b7 "
                 f"{result['assignments']} event assignments."
             )
-            st.rerun()
+            shared.data_changed()
