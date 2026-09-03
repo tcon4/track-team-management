@@ -6,6 +6,7 @@ import shared
 from db.xc import _parse_xc_time, fmt_xc_time
 
 season_id = shared.setup()
+shared.require_coach()
 
 year = st.session_state.current_year
 sport = st.session_state.sport

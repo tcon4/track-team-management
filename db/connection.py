@@ -295,6 +295,19 @@ CREATE TABLE IF NOT EXISTS workout_group_member (
     athlete_id INTEGER NOT NULL REFERENCES athlete(id),
     UNIQUE (group_id, athlete_id)
 );
+
+CREATE TABLE IF NOT EXISTS school_record (
+    id         SERIAL PRIMARY KEY,
+    school_id  INTEGER NOT NULL REFERENCES school(id),
+    event_name TEXT NOT NULL,
+    gender     TEXT NOT NULL CHECK (gender IN ('M', 'F')),
+    record_value TEXT NOT NULL,
+    holder_name  TEXT NOT NULL,
+    year       INTEGER NOT NULL,
+    sport      TEXT NOT NULL DEFAULT 'Track'
+                   CHECK (sport IN ('Track', 'XC')),
+    UNIQUE (school_id, event_name, gender, sport)
+);
 """
 
 _SQLITE_SCHEMA = """
@@ -427,6 +440,19 @@ CREATE TABLE IF NOT EXISTS workout_group_member (
     group_id   INTEGER NOT NULL REFERENCES workout_group(id) ON DELETE CASCADE,
     athlete_id INTEGER NOT NULL REFERENCES athlete(id),
     UNIQUE (group_id, athlete_id)
+);
+
+CREATE TABLE IF NOT EXISTS school_record (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    school_id  INTEGER NOT NULL REFERENCES school(id),
+    event_name TEXT NOT NULL,
+    gender     TEXT NOT NULL CHECK (gender IN ('M', 'F')),
+    record_value TEXT NOT NULL,
+    holder_name  TEXT NOT NULL,
+    year       INTEGER NOT NULL,
+    sport      TEXT NOT NULL DEFAULT 'Track'
+                   CHECK (sport IN ('Track', 'XC')),
+    UNIQUE (school_id, event_name, gender, sport)
 );
 """
 
@@ -665,6 +691,72 @@ def migrate_alumni_status() -> None:
 
 _db_initialized = False
 
+_HISTORIC_RECORDS_BOYS = [
+    ("Shot Put", "Joseph Karriker", "46 ft. 7 in.", 1999),
+    ("Discus", "Dameno Smith", "142 ft. 6 in.", 1995),
+    ("Long Jump", "Tyrone Carpenter", "21 ft. 3 in.", 1997),
+    ("Triple Jump", "David Connor", "41 ft. 2.5 in.", 1994),
+    ("High Jump", "Germaine Leach", "6 ft. 1 in.", 2006),
+    ("Pole Vault", "Chris Vickers", "11 ft. 0 in.", 1996),
+    ("110m Hurdles", "Kendrick Bailey", "15.22", 2009),
+    ("200m Hurdles", "Corey Alexander", "27.37", 1994),
+    ("300m Hurdles", "Turez Patterson", "45.21", 2019),
+    ("100m", "David Connor", "11.24", 1994),
+    ("200m", "Lathan Cannaday", "23.32", 2010),
+    ("400m", "Johnny Kauffman", "54.16", 1989),
+    ("800m", "Nathan Moore", "2:12.19", 1991),
+    ("1600m", "Sam Joffe", "4:47.06", 2008),
+    ("4x100 Relay", "M. Wilson, D. Tomlin, M. Pharr, D. Black", "47.07", 2008),
+    ("4x200 Relay", "T. Bruton, Z. Johnston, T. Caldwell, B. Jones", "1:41.22", 2007),
+    ("4x400 Relay", "I. Johnson, D. Howell, C. Locklear, G. Grotheer", "3:58.68", 2007),
+]
+
+_HISTORIC_RECORDS_GIRLS = [
+    ("Shot Put", "Ashley Garner", "32 ft. 9 in.", 2004),
+    ("Discus", "Maddie Knowland", "94 ft. 0 in.", 2004),
+    ("Long Jump", "Casey Carlay", "15 ft. 10.5 in.", 2008),
+    ("Triple Jump", "Aisha Cannon", "33 ft. 7 in.", 2006),
+    ("High Jump", "Greta Ray", "5 ft. 0 in.", 1995),
+    ("110m Hurdles", "Samantha Mangan", "17.03", 2007),
+    ("200m Hurdles", "Leondra Pridgen", "34.18", 2006),
+    ("100m", "Keoshia Butler", "13.12", 1995),
+    ("200m", "Tanisha Ellis", "27.50", 2007),
+    ("400m", "Jessica Swearengin", "1:05.28", 1997),
+    ("800m", "Alyssa Wedley", "2:42.00", 2014),
+    ("1600m", "Alyssa Wedley", "5:46.63", 2014),
+    ("4x100 Relay", "M. Pinkston, D. Simmons, T. Pinkston, A. Clark", "53.20", 2008),
+    ("4x200 Relay", "E. Rodes, M. Pinkston, T. Pinkston, A. Clark", "1:54.23", 2008),
+    ("4x400 Relay", "H. Vilagos, J. Bowers, J. Brown, J. Greene", "4:39.06", 2006),
+]
+
+
+def seed_school_records() -> None:
+    """Seed historic school records if the table is empty."""
+    conn = get_connection()
+    try:
+        row = fetchone(conn, "SELECT COUNT(*) AS cnt FROM school_record")
+        if row["cnt"] > 0:
+            return
+        school = fetchone(conn, "SELECT id FROM school LIMIT 1")
+        if not school:
+            return
+        sid = school["id"]
+        for event, holder, value, year in _HISTORIC_RECORDS_BOYS:
+            execute(conn,
+                """INSERT INTO school_record
+                   (school_id, event_name, gender, record_value, holder_name, year, sport)
+                   VALUES (?, ?, 'M', ?, ?, ?, 'Track')""",
+                (sid, event, value, holder, year))
+        for event, holder, value, year in _HISTORIC_RECORDS_GIRLS:
+            execute(conn,
+                """INSERT INTO school_record
+                   (school_id, event_name, gender, record_value, holder_name, year, sport)
+                   VALUES (?, ?, 'F', ?, ?, ?, 'Track')""",
+                (sid, event, value, holder, year))
+    finally:
+        release_connection(conn)
+
+
 def init_db() -> None:
     """Create tables, seed default events, run migrations, create default school.
     Skips if already run this process."""
@@ -687,4 +779,5 @@ def init_db() -> None:
                 ("My School", "My City"))
     finally:
         release_connection(conn)
+    seed_school_records()
     _db_initialized = True

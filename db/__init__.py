@@ -61,3 +61,9 @@ from db.xc import (
     save_workout_groups, move_athlete_between_groups,
     is_xc_pr, recalculate_xc_pr_flags,
 )
+
+# School records
+from db.records import (
+    get_school_records, upsert_school_record,
+    get_top_performances_track, get_top_performances_xc,
+)

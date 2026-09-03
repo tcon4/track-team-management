@@ -7,9 +7,22 @@ import streamlit as st
 from datetime import date
 import db
 
+COACH_PASSWORD = "mms2026"
+
 
 def _season_label(s: dict) -> str:
     return f"{s['year']} {s['sport']}"
+
+
+def is_coach() -> bool:
+    return st.session_state.get("is_coach", False)
+
+
+def require_coach() -> None:
+    """Stop page execution if not logged in as coach."""
+    if not is_coach():
+        st.warning("This page is for coaches only. Please log in via the sidebar.")
+        st.stop()
 
 
 def setup() -> int:
@@ -29,6 +42,9 @@ def setup() -> int:
                 "ms_matched", "csv_preview_rows"):
         if key not in st.session_state:
             st.session_state[key] = None
+
+    if "is_coach" not in st.session_state:
+        st.session_state.is_coach = False
 
     # Sidebar — single schools fetch
     schools = db.get_schools()
@@ -72,38 +88,55 @@ def setup() -> int:
 
         sport_label = selected_season["sport"]
         st.sidebar.markdown(
-            f"### 🏃 {sport_label} Manager"
+            f"### \U0001f3c3 {sport_label} Manager"
         )
 
-        with st.expander("New season"):
-            with st.form("new_season_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    new_sport = st.selectbox(
-                        "Sport", ["XC", "Track"], key="new_season_sport",
-                    )
-                with col2:
-                    new_year = st.number_input(
-                        "Year", value=date.today().year,
-                        min_value=2020, max_value=2030,
-                        key="new_season_year",
-                    )
-                if st.form_submit_button("Create"):
-                    new_sid = db.get_or_create_season(
-                        int(new_year), new_sport, school["id"],
-                    )
-                    st.session_state.selected_season_id = new_sid
-                    data_changed()
-
+        # Coach login
         st.divider()
+        if st.session_state.is_coach:
+            st.success("Logged in as Coach")
+            if st.button("Log out", key="coach_logout"):
+                st.session_state.is_coach = False
+                st.rerun()
 
-        with st.expander("Edit school name"):
-            with st.form("school_form"):
-                new_name = st.text_input("School name", value=school["name"])
-                new_city = st.text_input("City", value=school["city"])
-                if st.form_submit_button("Save"):
-                    db.update_school(school["id"], new_name, new_city)
-                    data_changed()
+            with st.expander("New season"):
+                with st.form("new_season_form"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        new_sport = st.selectbox(
+                            "Sport", ["XC", "Track"], key="new_season_sport",
+                        )
+                    with col2:
+                        new_year = st.number_input(
+                            "Year", value=date.today().year,
+                            min_value=2020, max_value=2030,
+                            key="new_season_year",
+                        )
+                    if st.form_submit_button("Create"):
+                        new_sid = db.get_or_create_season(
+                            int(new_year), new_sport, school["id"],
+                        )
+                        st.session_state.selected_season_id = new_sid
+                        data_changed()
+
+            st.divider()
+
+            with st.expander("Edit school name"):
+                with st.form("school_form"):
+                    new_name = st.text_input("School name", value=school["name"])
+                    new_city = st.text_input("City", value=school["city"])
+                    if st.form_submit_button("Save"):
+                        db.update_school(school["id"], new_name, new_city)
+                        data_changed()
+        else:
+            with st.popover("Coach Login"):
+                pwd = st.text_input("Password", type="password", key="coach_pwd")
+                if st.button("Log in", key="coach_login_btn"):
+                    if pwd == COACH_PASSWORD:
+                        st.session_state.is_coach = True
+                        st.rerun()
+                    else:
+                        st.error("Incorrect password")
 
     return selected_season["id"]
 

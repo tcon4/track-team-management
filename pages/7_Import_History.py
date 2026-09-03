@@ -3,6 +3,7 @@
 import shared
 
 season_id = shared.setup()
+shared.require_coach()
 
 import os
 import tempfile

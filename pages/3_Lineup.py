@@ -6,6 +6,7 @@ import db
 import shared
 
 season_id = shared.setup()
+shared.require_coach()
 
 year = st.session_state.current_year
 sport = st.session_state.sport

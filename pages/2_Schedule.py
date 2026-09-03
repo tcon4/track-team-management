@@ -50,9 +50,10 @@ else:
             hc1.markdown(f"**{meet['meet_date']}**")
             hc2.markdown(f"**{meet['name']}**")
             hc3.write(f"{status_pill} \u00b7 {meet['location']}")
-            if hc4.button("Edit", key=f"meet_edit_{meet['id']}"):
-                st.session_state.editing_meet = meet["id"]
-                st.rerun()
+            if shared.is_coach():
+                if hc4.button("Edit", key=f"meet_edit_{meet['id']}"):
+                    st.session_state.editing_meet = meet["id"]
+                    st.rerun()
 
             # Score + Milesplit link row
             sc1, sc2, sc3 = st.columns([2, 2, 3])
@@ -151,8 +152,8 @@ else:
                                                         f"{h['result_value']}{place_h}{pr_flag}"
                                                     )
 
-        # Edit panel
-        if st.session_state.get("editing_meet") == meet["id"]:
+        # Edit panel (coach only)
+        if shared.is_coach() and st.session_state.get("editing_meet") == meet["id"]:
             with st.container(border=True):
                 st.caption(f"Editing: {meet['name']}")
                 with st.form(f"edit_meet_{meet['id']}"):
@@ -219,6 +220,9 @@ st.divider()
 # ---------------------------------------------------------------------------
 # Add meet form
 # ---------------------------------------------------------------------------
+
+if not shared.is_coach():
+    st.stop()
 
 with st.expander("+ Add meet"):
     with st.form("add_meet_form", clear_on_submit=True):

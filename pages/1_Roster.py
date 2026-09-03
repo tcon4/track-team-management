@@ -100,10 +100,11 @@ else:
             st.caption(f"Gr. {athlete['grade']} \u00b7 {gender_label} \u00b7 {status_icon}")
 
         is_editing = st.session_state.editing_athlete == aid
-        btn_label = "\u2715" if is_editing else "Edit"
-        if col_edit.button(btn_label, key=f"edit_{aid}"):
-            st.session_state.editing_athlete = None if is_editing else aid
-            st.rerun()
+        if shared.is_coach():
+            btn_label = "\u2715" if is_editing else "Edit"
+            if col_edit.button(btn_label, key=f"edit_{aid}"):
+                st.session_state.editing_athlete = None if is_editing else aid
+                st.rerun()
 
         # ---- Athlete profile panel ----
         if is_profile_open and sport == "Track":
@@ -509,140 +510,122 @@ else:
                         st.success("Event assignments saved.")
                         shared.data_changed()
 
-st.divider()
+if shared.is_coach():
+    st.divider()
 
-# ---------------------------------------------------------------------------
-# Add athlete manually
-# ---------------------------------------------------------------------------
+    with st.expander("+ Add a single athlete"):
+        with st.form("add_athlete_form", clear_on_submit=True):
+            ac1, ac2 = st.columns(2)
+            first = ac1.text_input("First name", placeholder="e.g. Jane")
+            last = ac2.text_input("Last name", placeholder="e.g. Smith")
+            ac3, ac4 = st.columns(2)
+            grade = ac3.selectbox("Grade", [6, 7, 8])
+            gender = ac4.selectbox("Gender", ["M", "F"],
+                                   format_func=lambda x: "Boys (M)" if x == "M" else "Girls (F)")
+            submitted = st.form_submit_button("Add to roster", type="primary")
 
-with st.expander("+ Add a single athlete"):
-    with st.form("add_athlete_form", clear_on_submit=True):
-        ac1, ac2 = st.columns(2)
-        first = ac1.text_input("First name", placeholder="e.g. Jane")
-        last = ac2.text_input("Last name", placeholder="e.g. Smith")
-        ac3, ac4 = st.columns(2)
-        grade = ac3.selectbox("Grade", [6, 7, 8])
-        gender = ac4.selectbox("Gender", ["M", "F"],
-                               format_func=lambda x: "Boys (M)" if x == "M" else "Girls (F)")
-        submitted = st.form_submit_button("Add to roster", type="primary")
+        if submitted:
+            if not first.strip() or not last.strip():
+                st.error("First and last name are required.")
+            else:
+                aid = db.add_athlete(first, last, grade, gender,
+                                     st.session_state.school_id)
+                db.add_to_roster(season_id, aid)
+                st.success(f"Added {first} {last}.")
+                shared.data_changed()
 
-    if submitted:
-        if not first.strip() or not last.strip():
-            st.error("First and last name are required.")
-        else:
-            aid = db.add_athlete(first, last, grade, gender,
-                                 st.session_state.school_id)
-            db.add_to_roster(season_id, aid)
-            st.success(f"Added {first} {last}.")
-            shared.data_changed()
+    with st.expander("⬆ Import from CSV file"):
+        st.caption(
+            "Your CSV needs columns: `first_name`, `last_name`, `grade`, `gender`. "
+            "Other column names are fine too — see the template."
+        )
+        template = db.generate_csv_template()
+        st.download_button(
+            "Download CSV template",
+            data=template,
+            file_name="roster_template.csv",
+            mime="text/csv",
+        )
+        uploaded = st.file_uploader("Upload roster CSV", type=["csv"])
+        if uploaded:
+            file_bytes = uploaded.read()
+            rows, errors = db.parse_roster_csv(file_bytes)
+            if errors:
+                for e in errors:
+                    st.error(e)
+            if rows:
+                st.success(f"Preview: {len(rows)} athletes ready to import.")
+                preview_data = [
+                    {
+                        "First": r["first_name"],
+                        "Last": r["last_name"],
+                        "Grade": r["grade"],
+                        "Gender": "Boys" if r["gender"] == "M" else "Girls",
+                    }
+                    for r in rows
+                ]
+                st.dataframe(preview_data, use_container_width=True, hide_index=True)
+                st.session_state.csv_preview_rows = rows
+        if st.session_state.csv_preview_rows:
+            if st.button("Confirm import", type="primary"):
+                result = db.import_roster_from_rows(
+                    st.session_state.csv_preview_rows,
+                    st.session_state.school_id,
+                    season_id,
+                )
+                st.session_state.csv_preview_rows = None
+                st.success(
+                    f"Imported: {result['added']} added, "
+                    f"{result['skipped']} already existed."
+                )
+                shared.data_changed()
 
-# ---------------------------------------------------------------------------
-# CSV import
-# ---------------------------------------------------------------------------
-
-with st.expander("\u2b06 Import from CSV file"):
-    st.caption(
-        "Your CSV needs columns: `first_name`, `last_name`, `grade`, `gender`. "
-        "Other column names are fine too — see the template."
-    )
-
-    template = db.generate_csv_template()
-    st.download_button(
-        "Download CSV template",
-        data=template,
-        file_name="roster_template.csv",
-        mime="text/csv",
-    )
-
-    uploaded = st.file_uploader("Upload roster CSV", type=["csv"])
-
-    if uploaded:
-        file_bytes = uploaded.read()
-        rows, errors = db.parse_roster_csv(file_bytes)
-
-        if errors:
-            for e in errors:
-                st.error(e)
-
-        if rows:
-            st.success(f"Preview: {len(rows)} athletes ready to import.")
-            preview_data = [
-                {
-                    "First": r["first_name"],
-                    "Last": r["last_name"],
-                    "Grade": r["grade"],
-                    "Gender": "Boys" if r["gender"] == "M" else "Girls",
-                }
-                for r in rows
-            ]
-            st.dataframe(preview_data, use_container_width=True, hide_index=True)
-            st.session_state.csv_preview_rows = rows
-
-    if st.session_state.csv_preview_rows:
-        if st.button("Confirm import", type="primary"):
-            result = db.import_roster_from_rows(
-                st.session_state.csv_preview_rows,
-                st.session_state.school_id,
-                season_id,
-            )
-            st.session_state.csv_preview_rows = None
-            st.success(
-                f"Imported: {result['added']} added, "
-                f"{result['skipped']} already existed."
-            )
-            shared.data_changed()
-
-# ---------------------------------------------------------------------------
-# Tryout spreadsheet import
-# ---------------------------------------------------------------------------
-
-with st.expander("\u2b06 Import from tryout spreadsheet (.xlsx)"):
-    st.caption(
-        "Upload your tryout spreadsheet. Tabs should be named by grade/gender "
-        "(e.g. **6th Girls**, **7th Boys**). "
-        "Cut athletes (y in Cut? column) are skipped entirely. "
-        "Non-empty time columns auto-assign events and import as Tryouts meet results."
-    )
-    tryout_file = st.file_uploader("Upload tryout spreadsheet", type=["xlsx"],
-                                   key="tryout_upload")
-    if tryout_file:
-        preview, errors = db.parse_tryout_spreadsheet(tryout_file.read())
-        if errors:
-            for e in errors:
-                st.warning(e)
-        if preview:
-            added_count = len([r for r in preview if not r.get("cut")])
-            cut_count = len([r for r in preview if r.get("cut")])
-            result_count = sum(len(r.get("results", [])) for r in preview)
-            st.success(
-                f"Found **{added_count}** athletes to import \u00b7 "
-                f"{cut_count} cuts skipped \u00b7 "
-                f"{result_count} tryout results"
-            )
-            preview_rows = [
-                {
-                    "First": r["first_name"],
-                    "Last": r["last_name"],
-                    "Gr.": r["grade"],
-                    "Gender": "Boys" if r["gender"] == "M" else "Girls",
-                    "Events": ", ".join(r.get("events", [])) or "—",
-                }
-                for r in preview if not r.get("cut")
-            ]
-            st.dataframe(preview_rows, use_container_width=True, hide_index=True)
-            st.session_state["tryout_preview"] = preview
-
-    if st.session_state.get("tryout_preview"):
-        if st.button("Import tryout data", type="primary"):
-            result = db.import_tryout_data(
-                st.session_state["tryout_preview"],
-                st.session_state.school_id,
-                season_id,
-            )
-            st.session_state["tryout_preview"] = None
-            st.success(
-                f"Imported {result['athletes']} athletes \u00b7 "
-                f"{result['results']} tryout results \u00b7 "
-                f"{result['assignments']} event assignments."
-            )
-            shared.data_changed()
+    with st.expander("⬆ Import from tryout spreadsheet (.xlsx)"):
+        st.caption(
+            "Upload your tryout spreadsheet. Tabs should be named by grade/gender "
+            "(e.g. **6th Girls**, **7th Boys**). "
+            "Cut athletes (y in Cut? column) are skipped entirely. "
+            "Non-empty time columns auto-assign events and import as Tryouts meet results."
+        )
+        tryout_file = st.file_uploader("Upload tryout spreadsheet", type=["xlsx"],
+                                       key="tryout_upload")
+        if tryout_file:
+            preview, errors = db.parse_tryout_spreadsheet(tryout_file.read())
+            if errors:
+                for e in errors:
+                    st.warning(e)
+            if preview:
+                added_count = len([r for r in preview if not r.get("cut")])
+                cut_count = len([r for r in preview if r.get("cut")])
+                result_count = sum(len(r.get("results", [])) for r in preview)
+                st.success(
+                    f"Found **{added_count}** athletes to import · "
+                    f"{cut_count} cuts skipped · "
+                    f"{result_count} tryout results"
+                )
+                preview_rows = [
+                    {
+                        "First": r["first_name"],
+                        "Last": r["last_name"],
+                        "Gr.": r["grade"],
+                        "Gender": "Boys" if r["gender"] == "M" else "Girls",
+                        "Events": ", ".join(r.get("events", [])) or "—",
+                    }
+                    for r in preview if not r.get("cut")
+                ]
+                st.dataframe(preview_rows, use_container_width=True, hide_index=True)
+                st.session_state["tryout_preview"] = preview
+        if st.session_state.get("tryout_preview"):
+            if st.button("Import tryout data", type="primary"):
+                result = db.import_tryout_data(
+                    st.session_state["tryout_preview"],
+                    st.session_state.school_id,
+                    season_id,
+                )
+                st.session_state["tryout_preview"] = None
+                st.success(
+                    f"Imported {result['athletes']} athletes · "
+                    f"{result['results']} tryout results · "
+                    f"{result['assignments']} event assignments."
+                )
+                shared.data_changed()

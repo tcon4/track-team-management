@@ -111,7 +111,7 @@ elif sport == "XC" and xc_bests:
             st.page_link("pages/5_Season_Bests.py",
                          label=f"View all {len(prs)} PRs →")
 
-# --- Participation tracker ---
+# --- Participation tracker (coach only) ---
 roster = db.get_roster(season_id)
 active_roster = [a for a in roster if a["status"] == "active"]
 if sport == "Track":
@@ -126,7 +126,7 @@ low_participation = [
     if meet_counts.get(a["id"], 0) <= 1
 ]
 
-if low_participation and total_real_meets >= 1:
+if shared.is_coach() and low_participation and total_real_meets >= 1:
     st.divider()
     with st.expander(
         f"**Participation watch** — {len(low_participation)} athletes "
@@ -164,14 +164,22 @@ if low_participation and total_real_meets >= 1:
 st.divider()
 st.markdown("**Quick Links**")
 if sport == "XC":
-    lc1, lc2, lc3, lc4 = st.columns(4)
+    lc1, lc2, lc3 = st.columns(3)
     lc1.page_link("pages/1_Roster.py", label="📋 Roster")
     lc2.page_link("pages/2_Schedule.py", label="📅 Schedule")
-    lc3.page_link("pages/4_Results.py", label="🏁 Results")
-    lc4.page_link("pages/6_Workout_Groups.py", label="🏃 Workout Groups")
+    lc3.page_link("pages/8_School_Records.py", label="🏆 School Records")
+    if shared.is_coach():
+        lc1, lc2, lc3 = st.columns(3)
+        lc1.page_link("pages/4_Results.py", label="🏁 Results")
+        lc2.page_link("pages/6_Workout_Groups.py", label="🏃 Workout Groups")
+        lc3.page_link("pages/7_Import_History.py", label="📥 Import")
 else:
-    lc1, lc2, lc3, lc4 = st.columns(4)
+    lc1, lc2, lc3 = st.columns(3)
     lc1.page_link("pages/1_Roster.py", label="📋 Roster")
     lc2.page_link("pages/2_Schedule.py", label="📅 Schedule")
-    lc3.page_link("pages/3_Lineup.py", label="✏️ Lineup Builder")
-    lc4.page_link("pages/4_Results.py", label="🏁 Results")
+    lc3.page_link("pages/8_School_Records.py", label="🏆 School Records")
+    if shared.is_coach():
+        lc1, lc2, lc3 = st.columns(3)
+        lc1.page_link("pages/3_Lineup.py", label="✏️ Lineup Builder")
+        lc2.page_link("pages/4_Results.py", label="🏁 Results")
+        lc3.page_link("pages/5_Season_Bests.py", label="📊 Season Bests")
