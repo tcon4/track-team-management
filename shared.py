@@ -29,6 +29,8 @@ def require_coach() -> None:
 
 def setup() -> int:
     """Return the current season_id. Full init is done by app.py."""
+    if "selected_season_id" not in st.session_state:
+        init_app()
     return st.session_state.selected_season_id
 
 
