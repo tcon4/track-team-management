@@ -187,7 +187,15 @@ if sport == "Track":
                     except (ValueError, TypeError):
                         continue
 
-                    top = parsed[:3]
+                    seen_athletes: set[str] = set()
+                    top: list[tuple[dict, float]] = []
+                    for p, v in parsed:
+                        name_key = f"{p['first_name']} {p['last_name']}"
+                        if name_key not in seen_athletes:
+                            seen_athletes.add(name_key)
+                            top.append((p, v))
+                            if len(top) >= 3:
+                                break
                     if not top:
                         continue
 
@@ -259,7 +267,15 @@ elif sport == "XC":
                     except (ValueError, TypeError):
                         continue
 
-                    top = parsed[:5]
+                    seen_athletes: set[str] = set()
+                    top: list[tuple[dict, float]] = []
+                    for p, v in parsed:
+                        name_key = f"{p['first_name']} {p['last_name']}"
+                        if name_key not in seen_athletes:
+                            seen_athletes.add(name_key)
+                            top.append((p, v))
+                            if len(top) >= 5:
+                                break
                     if not top:
                         continue
 

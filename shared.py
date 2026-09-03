@@ -1,6 +1,8 @@
 """
 shared.py — Common sidebar, session state, and bootstrap logic.
-Every page calls setup() at the top to get the sidebar and season_id.
+
+app.py calls init_app() once to set up the DB, sidebar, and navigation.
+Each page calls setup() to get the current season_id.
 """
 
 import streamlit as st
@@ -26,16 +28,12 @@ def require_coach() -> None:
 
 
 def setup() -> int:
-    """
-    Bootstrap the app: init DB, render sidebar, resolve season.
-    Returns the current season_id.
-    """
-    st.set_page_config(
-        page_title="Athletics",
-        page_icon="\U0001f3c3",
-        layout="wide",
-    )
+    """Return the current season_id. Full init is done by app.py."""
+    return st.session_state.selected_season_id
 
+
+def init_app() -> int:
+    """Full app initialization — called once from app.py before navigation."""
     db.init_db()
 
     for key in ("editing_athlete", "editing_meet", "profile_athlete",
@@ -46,7 +44,6 @@ def setup() -> int:
     if "is_coach" not in st.session_state:
         st.session_state.is_coach = False
 
-    # Sidebar — single schools fetch
     schools = db.get_schools()
 
     if "school_id" not in st.session_state:
@@ -61,7 +58,6 @@ def setup() -> int:
         school = next(s for s in schools if s["name"] == selected_school_name)
         st.session_state.school_id = school["id"]
 
-        # Season selector — single dropdown
         seasons = db.get_seasons(school["id"])
 
         if not seasons:
@@ -91,7 +87,6 @@ def setup() -> int:
             f"### \U0001f3c3 {sport_label} Manager"
         )
 
-        # Coach login
         st.divider()
         if st.session_state.is_coach:
             st.success("Logged in as Coach")
