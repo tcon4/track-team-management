@@ -70,6 +70,18 @@ def update_meet(meet_id: int, name: str, meet_date: str,
 def delete_meet(meet_id: int) -> None:
     conn = get_connection()
     try:
+        execute(conn, "DELETE FROM xc_result WHERE meet_id=?", (meet_id,))
+        execute(conn, "DELETE FROM track_result WHERE meet_id=?", (meet_id,))
+        execute(conn, "DELETE FROM lineup_entry WHERE meet_id=?", (meet_id,))
+        execute(conn,
+            """DELETE FROM result WHERE race_entry_id IN
+               (SELECT re.id FROM race_entry re
+                JOIN race r ON r.id = re.race_id
+                WHERE r.meet_id = ?)""", (meet_id,))
+        execute(conn,
+            """DELETE FROM race_entry WHERE race_id IN
+               (SELECT id FROM race WHERE meet_id = ?)""", (meet_id,))
+        execute(conn, "DELETE FROM race WHERE meet_id=?", (meet_id,))
         execute(conn, "DELETE FROM meet WHERE id=?", (meet_id,))
     finally:
         release_connection(conn)
