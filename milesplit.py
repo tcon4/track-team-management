@@ -325,10 +325,8 @@ def build_team_results_url(meet_url: str, team_id: int) -> str:
 def parse_team_results_html(html: str) -> list[dict]:
     """
     Parse the /teams/{ID} results page HTML into result dicts.
-    Uses Milesplit's CSS classes for reliable parsing:
-      - <tr class="thead">        → gender header (Girls/Boys)
-      - <tr class="thead tertiary"> → event header
-      - <tr>                      → result row
+    Supports both the legacy layout (id="teamResultsByEvent", thead rows)
+    and the current layout (class="meetTeams__table", groupTitle headings).
     """
     try:
         from bs4 import BeautifulSoup
@@ -338,36 +336,106 @@ def parse_team_results_html(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     PLACE_RE = re.compile(r"(\d+)(?:st|nd|rd|th)")
 
-    results = []
-    current_gender = None
-    current_event  = None
+    # --- Try current layout first (meetTeams__table) ---
+    new_tables = soup.find_all("table", class_="meetTeams__table")
+    if new_tables:
+        return _parse_new_layout(new_tables, soup, PLACE_RE)
 
-    # Target the specific table
+    # --- Fall back to legacy layout ---
     table = soup.find("table", id="teamResultsByEvent") or soup.find("table")
     if not table:
         return []
+    return _parse_legacy_layout(table, PLACE_RE)
+
+
+def _parse_new_layout(tables, soup, PLACE_RE) -> list[dict]:
+    """Parse the current MileSplit meetTeams__table layout."""
+    results = []
+
+    for table in tables:
+        heading = table.find_previous("h3", class_="meetTeams__groupTitle")
+        if not heading:
+            continue
+
+        title = heading.get_text(strip=True)
+        if title.startswith("Girls"):
+            gender = "F"
+            event = title[5:].strip()
+        elif title.startswith("Boys"):
+            gender = "M"
+            event = title[4:].strip()
+        else:
+            continue
+
+        for row in table.find_all("tr"):
+            cells = row.find_all("td")
+            if len(cells) < 3:
+                continue
+
+            participant = row.find("td", class_="meetTeams__participant")
+            mark = row.find("td", class_="meetTeams__mark")
+            place_cell = row.find("td", class_="meetTeams__place")
+
+            if not participant or not mark:
+                continue
+
+            link = participant.find("a")
+            full_name = " ".join(
+                (link or participant).get_text(strip=True).split()
+            )
+            result_val = mark.get_text(strip=True)
+            if not full_name or not result_val:
+                continue
+
+            place = None
+            if place_cell:
+                place_match = PLACE_RE.search(place_cell.get_text(strip=True))
+                place = int(place_match.group(1)) if place_match else None
+
+            parts = full_name.split()
+            first = parts[0] if parts else ""
+            last = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+            if not first and not last:
+                continue
+
+            results.append({
+                "event":        event,
+                "gender":       gender,
+                "first_name":   first,
+                "last_name":    last,
+                "result_value": result_val,
+                "place":        place,
+                "is_valid":     True,
+            })
+
+    return results
+
+
+def _parse_legacy_layout(table, PLACE_RE) -> list[dict]:
+    """Parse the legacy teamResultsByEvent layout."""
+    results = []
+    current_gender = None
+    current_event = None
 
     for row in table.find_all("tr"):
         classes = row.get("class", [])
 
-        # Gender header: <tr class="thead">
         if "thead" in classes and "tertiary" not in classes:
             th = row.find("th")
             if th:
                 text = th.get_text(strip=True)
                 if text in ("Girls", "Boys"):
                     current_gender = "F" if text == "Girls" else "M"
-                    current_event  = None
+                    current_event = None
             continue
 
-        # Event header: <tr class="thead tertiary">
         if "thead" in classes and "tertiary" in classes:
             th = row.find("th")
             if th:
                 current_event = th.get_text(strip=True)
             continue
 
-        # Result row: plain <tr> with no classes
         if not current_event or not current_gender:
             continue
 
@@ -390,7 +458,7 @@ def parse_team_results_html(html: str) -> list[dict]:
 
         parts = full_name.split()
         first = parts[0] if parts else ""
-        last  = " ".join(parts[1:]) if len(parts) > 1 else ""
+        last = " ".join(parts[1:]) if len(parts) > 1 else ""
 
         if not first and not last:
             continue
